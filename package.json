@@ -13,10 +13,13 @@
     "version-packages": "changeset version",
     "release": "npm run build && changeset publish",
     "test": "npm run test --workspaces",
-    "test:coverage": "npm run test:coverage --workspaces"
+    "test:coverage": "npm run test:coverage --workspaces",
+    "test:packaging": "node scripts/test-packaging.mjs"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/changelog-github": "^0.5.1",
-    "@changesets/cli": "^2.29.0"
+    "@changesets/cli": "^2.29.0",
+    "publint": "^0.3.25"
   }
 }
