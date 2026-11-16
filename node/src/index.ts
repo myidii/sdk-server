@@ -6,7 +6,9 @@ export type SessionStatus = "created" | "in_progress" | "passed" | "failed" | "e
 export type Signal = { name: "head_turns" | "light_reflection" | "frame_analysis" | "device_integrity"; status: "passed" | "failed" | "not_available"; reason: string };
 export type Session = {
   id: string; object: "session"; type: "liveness"; environment: "sandbox" | "live"; status: SessionStatus;
-  reference: string | null; attempts: number; score: number | null; checks: Signal[] | null; created_at: string; decided_at: string | null;
+  reference: string | null; attempts: number; score: number | null; checks: Signal[] | null;
+  /** Live only: set once a check passes. Fetch it with sessions.photo(id). */
+  photo_url: string | null; created_at: string; decided_at: string | null;
 };
 export type CreatedSession = Session & { token: string; url: string; expires_at: string };
 export type CreateSessionParams = {
@@ -60,6 +62,17 @@ export class Myidii {
   sessions = {
     create: (params: CreateSessionParams = {}) => this.request<CreatedSession>("POST", "/v1/sessions", { type: "liveness", ...params }),
     retrieve: (id: string) => this.request<Session>("GET", `/v1/sessions/${encodeURIComponent(id)}`),
+    /** The clean still photo from a passed live check, as JPEG bytes. */
+    photo: async (id: string): Promise<Uint8Array> => {
+      const res = await this.fetch(`${this.apiUrl}/v1/sessions/${encodeURIComponent(id)}/photo`, {
+        headers: { authorization: `Bearer ${this.secretKey}`, "user-agent": "myidii-node/0.1.0" }, signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string } };
+        throw new MyidiiError(data.error?.message ?? `Request failed with ${res.status}`, data.error?.type ?? "api_error", res.status);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
     list: (opts: { limit?: number } = {}) => this.request<{ object: "list"; data: Session[] }>("GET", `/v1/sessions${opts.limit ? `?limit=${opts.limit}` : ""}`),
   };
 
