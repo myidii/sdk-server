@@ -3,13 +3,17 @@
   "private": true,
   "description": "MYIDII server SDKs. Node.js today; Python and PHP to follow.",
   "license": "MIT",
-  "workspaces": ["node"],
+  "workspaces": [
+    "node"
+  ],
   "scripts": {
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && changeset publish"
+    "release": "npm run build && changeset publish",
+    "test": "npm run test --workspaces",
+    "test:coverage": "npm run test:coverage --workspaces"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
