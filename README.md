@@ -1,10 +1,17 @@
-# MYIDII Server SDKs
+# MYIDII server SDKs
 
-Node, Python and PHP. Generated from `platform/packages/contracts`.
+| Package | |
+| --- | --- |
+| [`@myidii/node`](node) | Node.js: create sessions, read results, verify webhooks |
 
-Used on the developer's server to create sessions, fetch results and verify webhooks with the secret key.
+Python and PHP will follow, each released on its own.
 
-```ts
-const session = await myidii.sessions.create({ type: "liveness" });
-const check = await myidii.sessions.get(session.id);
+## Working on this repo
+
+```sh
+npm install
+npm run build
+npx changeset        # describe your change for the changelog
 ```
+
+Releases are automatic: merging the "Version packages" pull request publishes to npm with provenance.
