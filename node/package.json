@@ -1,14 +1,49 @@
 {
   "name": "@myidii/node",
   "version": "0.1.0",
-  "description": "MYIDII for Node.js servers: create liveness sessions, read verdicts and verify webhooks.",
+  "description": "MYIDII server SDK for Node.js: create sessions, read results and verify webhooks",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "README.md"],
-  "engines": { "node": ">=18" },
-  "scripts": { "build": "tsc -p tsconfig.json" },
-  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.0.0" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": [
+    "myidii",
+    "liveness",
+    "verification",
+    "kyc",
+    "webhooks"
+  ],
+  "homepage": "https://github.com/myidii/sdk-server#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myidii/sdk-server.git",
+    "directory": "node"
+  },
+  "bugs": {
+    "url": "https://github.com/myidii/sdk-server/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -1,0 +1,33 @@
+# Publishes the server SDKs when a GitHub release is published. Each language has its own tag prefix,
+# so they release independently: node-v<version> publishes @myidii/node.
+# No npm token: npm trusts this workflow (trusted publishing), and each release carries a provenance record.
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  node:
+    if: startsWith(github.event.release.tag_name, 'node-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Trusted publishing needs a recent npm
+        run: npm install -g npm@latest
+      - name: Tag must match the package version
+        run: test "node-v$(node -p "require('./package.json').version")" = "${{ github.event.release.tag_name }}"
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --provenance --access public
