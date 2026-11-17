@@ -41,11 +41,68 @@ export type Wallet = {
   /** "demo" while payments aren't connected. */
   provider: "paystack" | "demo";
 };
-export type WebhookEventType = "session.completed" | "session.expired" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
+export type MatchLevel = "exact" | "close" | "no" | "not_checked";
+/** The details to compare with the official record. Send what you have; each field is answered on its own. */
+export type IdentityMatch = {
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  /** YYYY-MM-DD. */
+  date_of_birth?: string;
+  phone?: string;
+};
+export type NinLookupParams = { nin: string; match?: IdentityMatch; reference?: string };
+export type BvnLookupParams = { bvn: string; match?: IdentityMatch; reference?: string };
+export type BusinessLookupParams = {
+  /** Only "NG" for now. */
+  country: "NG";
+  /** RC, BN or IT number, for example "RC1234567". */
+  registration_number: string;
+  /** Directors and shareholders too. */
+  include_people?: boolean;
+  reference?: string;
+};
+export type IdentityLookupResult = {
+  found: boolean;
+  /** Null when nothing was found. */
+  match: { first_name: MatchLevel; middle_name: MatchLevel; last_name: MatchLevel; date_of_birth: MatchLevel; phone: MatchLevel } | null;
+  /** Only for companies approved for full records. The photo is base64 JPEG. */
+  record?: { first_name?: string; middle_name?: string; last_name?: string; date_of_birth?: string; gender?: "male" | "female"; phone?: string; photo?: string } | null;
+};
+export type BusinessLookupResult = {
+  found: boolean;
+  company: {
+    name: string;
+    registration_number: string;
+    kind: "company" | "business_name" | "incorporated_trustees";
+    status: string | null;
+    registered_on: string | null;
+    address: string | null;
+    email: string | null;
+    people: { name: string; role: string; shares?: number }[] | null;
+  } | null;
+};
+export type LookupType = "nin" | "bvn" | "business";
+export type Lookup<R = IdentityLookupResult | BusinessLookupResult> = {
+  id: string;
+  object: "lookup";
+  type: LookupType;
+  environment: "sandbox" | "live";
+  status: "completed" | "failed";
+  reference: string | null;
+  /** The last 4 digits of the number looked up. */
+  subject_last4: string;
+  result: R | null;
+  /** Set when status is failed. Failed lookups aren't charged. */
+  error: { type: string; message: string } | null;
+  created_at: string;
+};
+
+export type WebhookEventType = "session.completed" | "session.expired" | "lookup.completed" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
 export type WebhookEvent<T = unknown> = { id: string; object: "event"; type: WebhookEventType; environment: "sandbox" | "live"; created_at: string; data: T };
 
 export class MyidiiError extends Error {
-  constructor(message: string, public type: string, public status: number) {
+  constructor(message: string, public type: string, public status: number, public lookup: Lookup | null = null) {
     super(message);
     this.name = "MyidiiError";
   }
@@ -74,8 +131,8 @@ export class Myidii {
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string } };
-    if (!res.ok) throw new MyidiiError(data.error?.message ?? `Request failed with ${res.status}`, data.error?.type ?? "api_error", res.status);
+    const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string }; lookup?: Lookup };
+    if (!res.ok) throw new MyidiiError(data.error?.message ?? `Request failed with ${res.status}`, data.error?.type ?? "api_error", res.status, data.lookup ?? null);
     return data as T;
   }
 
@@ -95,6 +152,34 @@ export class Myidii {
       return new Uint8Array(await res.arrayBuffer());
     },
     list: (opts: { limit?: number } = {}) => this.request<{ object: "list"; data: Session[] }>("GET", `/v1/sessions${opts.limit ? `?limit=${opts.limit}` : ""}`),
+  };
+
+  /**
+   * NIN and BVN lookups (Nigeria). The answer comes back in the response. Live lookups need your company to be
+   * approved under Products in the dashboard, and are charged per answer, including "not found".
+   * Sandbox test numbers: NIN 00000000001 (found), 00000000002 (not found), 00000000003 (source down);
+   * BVN 22222222221, 22222222222, 22222222223.
+   */
+  identity = {
+    nin: (params: NinLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/nin", params),
+    bvn: (params: BvnLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/bvn", params),
+  };
+
+  /** Business registry lookups (Nigeria's CAC). Sandbox: RC0000001, BN0000002, RC0000002 (not found), RC0000003 (source down). */
+  business = {
+    lookup: (params: BusinessLookupParams) => this.request<Lookup<BusinessLookupResult>>("POST", "/v1/business/lookup", params),
+  };
+
+  /** Past NIN, BVN and business lookups. */
+  lookups = {
+    retrieve: (id: string) => this.request<Lookup>("GET", `/v1/lookups/${encodeURIComponent(id)}`),
+    list: (opts: { limit?: number; type?: LookupType } = {}) => {
+      const q = new URLSearchParams();
+      if (opts.limit) q.set("limit", String(opts.limit));
+      if (opts.type) q.set("type", opts.type);
+      const qs = q.toString();
+      return this.request<{ object: "list"; data: Lookup[] }>("GET", `/v1/lookups${qs ? `?${qs}` : ""}`);
+    },
   };
 
   wallet = {

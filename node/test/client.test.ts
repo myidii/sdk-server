@@ -332,3 +332,69 @@ describe("timeout", () => {
     expect(f.calls[0]!.init.signal).not.toBe(f.calls[1]!.init.signal);
   });
 });
+
+const lookup = {
+  id: "lkp_1", object: "lookup", type: "nin", environment: "sandbox", status: "completed", reference: "user_1", subject_last4: "0001",
+  result: { found: true, match: { first_name: "exact", middle_name: "not_checked", last_name: "close", date_of_birth: "exact", phone: "not_checked" } },
+  error: null, created_at: "2026-11-17T10:00:00Z",
+};
+
+describe("identity lookups", () => {
+  it("posts a NIN lookup with match details", async () => {
+    const { fetch, calls } = fakeFetch(json(lookup));
+    const out = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.nin({ nin: "00000000001", match: { first_name: "Adaeze", date_of_birth: "1990-04-02" }, reference: "user_1" });
+    expect(out.result?.match?.last_name).toBe("close");
+    expect(calls[0]!.url).toBe("https://api.test/v1/identity/nin");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ nin: "00000000001", match: { first_name: "Adaeze", date_of_birth: "1990-04-02" }, reference: "user_1" });
+    expect(headersOf(calls[0]!).get("authorization")).toBe(`Bearer ${KEY}`);
+  });
+
+  it("posts a BVN lookup", async () => {
+    const { fetch, calls } = fakeFetch(json({ ...lookup, type: "bvn" }));
+    await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.bvn({ bvn: "22222222221" });
+    expect(calls[0]!.url).toBe("https://api.test/v1/identity/bvn");
+  });
+
+  it("hands back the failed lookup when the source is down", async () => {
+    const failed = { ...lookup, status: "failed", result: null, error: { type: "source_unavailable", message: "NIMC isn't answering" } };
+    const { fetch } = fakeFetch(json({ error: { type: "source_unavailable", message: "NIMC isn't answering right now." }, lookup: failed }, 503));
+    const err = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.nin({ nin: "00000000003" }).catch((e) => e);
+    expect(err).toBeInstanceOf(MyidiiError);
+    expect(err).toMatchObject({ type: "source_unavailable", status: 503, lookup: { id: "lkp_1", status: "failed" } });
+  });
+
+  it("leaves lookup null on other errors", async () => {
+    const { fetch } = fakeFetch(json({ error: { type: "product_not_approved", message: "Not approved" } }, 403));
+    const err = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.bvn({ bvn: "22222222221" }).catch((e) => e);
+    expect(err).toMatchObject({ type: "product_not_approved", status: 403, lookup: null });
+  });
+});
+
+describe("business.lookup", () => {
+  it("posts the registration number", async () => {
+    const { fetch, calls } = fakeFetch(json({ ...lookup, type: "business", result: { found: true, company: { name: "Sandbox Foods Limited" } } }));
+    const out = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).business.lookup({ country: "NG", registration_number: "RC0000001", include_people: true });
+    expect(out.result?.company?.name).toBe("Sandbox Foods Limited");
+    expect(calls[0]!.url).toBe("https://api.test/v1/business/lookup");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ country: "NG", registration_number: "RC0000001", include_people: true });
+  });
+});
+
+describe("lookups", () => {
+  it("retrieves one, escaping the id", async () => {
+    const { fetch, calls } = fakeFetch(json(lookup));
+    await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).lookups.retrieve("lkp/1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/lookups/lkp%2F1");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
+  it("lists with optional filters", async () => {
+    const { fetch, calls } = fakeFetch(json({ object: "list", data: [lookup] }), json({ object: "list", data: [] }));
+    const c = new Myidii(KEY, { fetch, apiUrl: "https://api.test" });
+    expect((await c.lookups.list({ limit: 5, type: "bvn" })).data).toHaveLength(1);
+    await c.lookups.list();
+    expect(calls[0]!.url).toBe("https://api.test/v1/lookups?limit=5&type=bvn");
+    expect(calls[1]!.url).toBe("https://api.test/v1/lookups");
+  });
+});
