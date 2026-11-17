@@ -1,5 +1,6 @@
 # Keeps a "Version packages" pull request open from the changesets on main. Merging it publishes the new
 # versions to npm through trusted publishing (no token, with provenance) and tags them on GitHub.
+# Nothing is published unless the unit and packaging tests pass first.
 name: Release
 
 on:
@@ -27,6 +28,10 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+      - name: Packaging tests
+        run: npm run test:packaging
       - uses: changesets/action@v1
         with:
           version: npm run version-packages
