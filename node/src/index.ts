@@ -1,5 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+// Set to the package version at build time (tsup define). Falls back when running from source, e.g. in tests.
+declare const __VERSION__: string;
+const USER_AGENT = `myidii-node/${typeof __VERSION__ === "string" ? __VERSION__ : "0.0.0"}`;
+
 // Types mirror platform/packages/contracts. Kept by hand until the SDKs are generated from it.
 
 export type SessionStatus = "created" | "in_progress" | "passed" | "failed" | "expired";
@@ -49,7 +53,7 @@ export class Myidii {
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.fetch(`${this.apiUrl}${path}`, {
       method,
-      headers: { authorization: `Bearer ${this.secretKey}`, ...(body ? { "content-type": "application/json" } : {}), "user-agent": "myidii-node/0.1.0" },
+      headers: { authorization: `Bearer ${this.secretKey}`, ...(body ? { "content-type": "application/json" } : {}), "user-agent": USER_AGENT },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(this.timeoutMs),
     });
@@ -65,7 +69,7 @@ export class Myidii {
     /** The clean still photo from a passed live check, as JPEG bytes. */
     photo: async (id: string): Promise<Uint8Array> => {
       const res = await this.fetch(`${this.apiUrl}/v1/sessions/${encodeURIComponent(id)}/photo`, {
-        headers: { authorization: `Bearer ${this.secretKey}`, "user-agent": "myidii-node/0.1.0" }, signal: AbortSignal.timeout(this.timeoutMs),
+        headers: { authorization: `Bearer ${this.secretKey}`, "user-agent": USER_AGENT }, signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string } };
