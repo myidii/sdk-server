@@ -1,0 +1,11 @@
+# Secret scanning settings. Gitleaks' default rules, plus an allow-list for test fixtures whose
+# "secrets" are made up on purpose (webhook signature test vectors). Never add real paths here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Made-up secrets in test fixtures"
+paths = [
+  '''node/test/fixtures/webhook-vectors\.json''',
+  '''node/scripts/webhook-vectors\.mjs''',
+]
