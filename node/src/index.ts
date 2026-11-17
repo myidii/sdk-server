@@ -23,7 +23,24 @@ export type CreateSessionParams = {
   /** Sandbox only: force the outcome. */
   simulate?: "pass" | "fail";
 };
-export type Wallet = { object: "wallet"; currency: string; balance: number; price_per_session: number; sessions_left: number; low_balance: number };
+export type Wallet = {
+  object: "wallet";
+  /** Always "USD". */
+  currency: string;
+  /** In cents. */
+  balance: number;
+  /** In cents. One live session covers up to 3 tries. */
+  price_per_session: number;
+  sessions_left: number;
+  /** In cents. Below this, wallet.low_balance is sent. */
+  low_balance: number;
+  /** The currency top-ups are paid in, from the company's country. */
+  pay_currency: string;
+  /** Units of pay_currency per dollar. */
+  fx_rate: number;
+  /** "demo" while payments aren't connected. */
+  provider: "paystack" | "demo";
+};
 export type WebhookEventType = "session.completed" | "session.expired" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
 export type WebhookEvent<T = unknown> = { id: string; object: "event"; type: WebhookEventType; environment: "sandbox" | "live"; created_at: string; data: T };
 
