@@ -42,7 +42,9 @@ console.log(`Node ${process.version}, working in ${tmp}`);
 
 try {
   run("npm", ["run", "build", "-w", "node"]);
-  const [packed] = JSON.parse(run("npm", ["pack", "-w", "node", "--json", "--pack-destination", tmp]));
+  // npm 11 prints a list of packed packages; npm 12 prints an object keyed by package name.
+  const out = JSON.parse(run("npm", ["pack", "-w", "node", "--json", "--pack-destination", tmp]));
+  const packed = Array.isArray(out) ? out[0] : out["@myidii/node"];
   const tarball = join(tmp, packed.filename);
   console.log(`packed ${packed.filename} (${packed.files.length} files)`);
 
