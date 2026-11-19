@@ -332,3 +332,95 @@ describe("timeout", () => {
     expect(f.calls[0]!.init.signal).not.toBe(f.calls[1]!.init.signal);
   });
 });
+
+const lookup = {
+  id: "lkp_1", object: "lookup", country: "NG", product: "identity", type: "nin", environment: "sandbox", status: "completed", reference: "user_1", subject_last4: "0001",
+  result: { found: true, match: { first_name: "exact", middle_name: "not_checked", last_name: "close", date_of_birth: "exact", phone: "not_checked" } },
+  error: null, created_at: "2026-11-17T10:00:00Z",
+};
+
+describe("identity.lookup", () => {
+  it("posts a NIN lookup with match details", async () => {
+    const { fetch, calls } = fakeFetch(json(lookup));
+    const params = { country: "NG", id_type: "nin", id_number: "00000000001", match: { first_name: "Adaeze", date_of_birth: "1990-04-02" }, reference: "user_1" } as const;
+    const out = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.lookup(params);
+    expect(out.result?.match?.last_name).toBe("close");
+    expect(out.country).toBe("NG");
+    expect(out.product).toBe("identity");
+    expect(calls[0]!.url).toBe("https://api.test/v1/identity/lookup");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual(params);
+    expect(headersOf(calls[0]!).get("authorization")).toBe(`Bearer ${KEY}`);
+  });
+
+  it("posts a BVN lookup to the same endpoint", async () => {
+    const { fetch, calls } = fakeFetch(json({ ...lookup, type: "bvn" }));
+    await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.lookup({ country: "NG", id_type: "bvn", id_number: "22222222221" });
+    expect(calls[0]!.url).toBe("https://api.test/v1/identity/lookup");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ country: "NG", id_type: "bvn", id_number: "22222222221" });
+  });
+
+  it("hands back the failed lookup when the source is down", async () => {
+    const failed = { ...lookup, status: "failed", result: null, error: { type: "source_unavailable", message: "NIMC isn't answering" } };
+    const { fetch } = fakeFetch(json({ error: { type: "source_unavailable", message: "NIMC isn't answering right now." }, lookup: failed }, 503));
+    const err = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.lookup({ country: "NG", id_type: "nin", id_number: "00000000003" }).catch((e) => e);
+    expect(err).toBeInstanceOf(MyidiiError);
+    expect(err).toMatchObject({ type: "source_unavailable", status: 503, lookup: { id: "lkp_1", status: "failed" } });
+  });
+
+  it("leaves lookup null on other errors", async () => {
+    const { fetch } = fakeFetch(json({ error: { type: "product_not_approved", message: "Not approved" } }, 403));
+    const err = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).identity.lookup({ country: "NG", id_type: "bvn", id_number: "22222222221" }).catch((e) => e);
+    expect(err).toMatchObject({ type: "product_not_approved", status: 403, lookup: null });
+  });
+});
+
+describe("business.lookup", () => {
+  it("posts the registration number", async () => {
+    const { fetch, calls } = fakeFetch(json({ ...lookup, product: "business", type: "business", result: { found: true, company: { name: "Sandbox Foods Limited" } } }));
+    const out = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).business.lookup({ country: "NG", registration_number: "RC0000001", include_people: true });
+    expect(out.result?.company?.name).toBe("Sandbox Foods Limited");
+    expect(out.product).toBe("business");
+    expect(calls[0]!.url).toBe("https://api.test/v1/business/lookup");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ country: "NG", registration_number: "RC0000001", include_people: true });
+  });
+});
+
+describe("coverage.retrieve", () => {
+  it("gets the supported countries", async () => {
+    const coverage = {
+      object: "coverage",
+      identity: [{ country: "NG", name: "Nigeria", id_types: [
+        { id_type: "nin", label: "NIN", name: "National Identification Number", hint: "11 digits", live: true },
+        { id_type: "bvn", label: "BVN", name: "Bank Verification Number", hint: "11 digits", live: false },
+      ] }],
+      business: [{ country: "NG", name: "Nigeria", registry: "CAC", number_label: "RC or BN number", hint: "RC1234567", live: false }],
+    };
+    const { fetch, calls } = fakeFetch(json(coverage));
+    const out = await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).coverage.retrieve();
+    expect(calls[0]!.url).toBe("https://api.test/v1/coverage");
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(out.identity[0]!.id_types.map((t) => t.id_type)).toEqual(["nin", "bvn"]);
+    expect(out.business[0]!.registry).toBe("CAC");
+  });
+});
+
+describe("lookups", () => {
+  it("retrieves one, escaping the id", async () => {
+    const { fetch, calls } = fakeFetch(json(lookup));
+    await new Myidii(KEY, { fetch, apiUrl: "https://api.test" }).lookups.retrieve("lkp/1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/lookups/lkp%2F1");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
+  it("lists with optional filters", async () => {
+    const { fetch, calls } = fakeFetch(json({ object: "list", data: [lookup] }), json({ object: "list", data: [] }), json({ object: "list", data: [] }));
+    const c = new Myidii(KEY, { fetch, apiUrl: "https://api.test" });
+    expect((await c.lookups.list({ limit: 5, type: "bvn" })).data).toHaveLength(1);
+    await c.lookups.list();
+    await c.lookups.list({ country: "NG", type: "nin" });
+    expect(calls[0]!.url).toBe("https://api.test/v1/lookups?limit=5&type=bvn");
+    expect(calls[1]!.url).toBe("https://api.test/v1/lookups");
+    expect(calls[2]!.url).toBe("https://api.test/v1/lookups?type=nin&country=NG");
+  });
+});

@@ -41,11 +41,87 @@ export type Wallet = {
   /** "demo" while payments aren't connected. */
   provider: "paystack" | "demo";
 };
-export type WebhookEventType = "session.completed" | "session.expired" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
+export type MatchLevel = "exact" | "close" | "no" | "not_checked";
+/** The details to compare with the official record. Send what you have; each field is answered on its own. */
+export type IdentityMatch = {
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  /** YYYY-MM-DD. */
+  date_of_birth?: string;
+  phone?: string;
+};
+/** ISO 3166-1 alpha-2 country code. Only "NG" for now; coverage.retrieve() lists what's supported. */
+export type Country = "NG";
+export type IdentityIdType = "nin" | "bvn";
+export type IdentityLookupParams = {
+  country: Country;
+  /** For NG: "nin" or "bvn". */
+  id_type: IdentityIdType;
+  /** For NG, NIN and BVN are 11 digits. */
+  id_number: string;
+  match?: IdentityMatch;
+  reference?: string;
+};
+export type BusinessLookupParams = {
+  country: Country;
+  /** RC, BN or IT number, for example "RC1234567". */
+  registration_number: string;
+  /** Directors and shareholders too. */
+  include_people?: boolean;
+  reference?: string;
+};
+export type IdentityLookupResult = {
+  found: boolean;
+  /** Null when nothing was found. */
+  match: { first_name: MatchLevel; middle_name: MatchLevel; last_name: MatchLevel; date_of_birth: MatchLevel; phone: MatchLevel } | null;
+  /** Only for companies approved for full records. The photo is base64 JPEG. */
+  record?: { first_name?: string; middle_name?: string; last_name?: string; date_of_birth?: string; gender?: "male" | "female"; phone?: string; photo?: string } | null;
+};
+export type BusinessLookupResult = {
+  found: boolean;
+  company: {
+    name: string;
+    registration_number: string;
+    kind: "company" | "business_name" | "incorporated_trustees";
+    status: string | null;
+    registered_on: string | null;
+    address: string | null;
+    email: string | null;
+    people: { name: string; role: string; shares?: number }[] | null;
+  } | null;
+};
+export type LookupType = IdentityIdType | "business";
+export type LookupProduct = "identity" | "business";
+export type Lookup<R = IdentityLookupResult | BusinessLookupResult> = {
+  id: string;
+  object: "lookup";
+  /** ISO 3166-1 alpha-2, for example "NG". */
+  country: string;
+  product: LookupProduct;
+  type: LookupType;
+  environment: "sandbox" | "live";
+  status: "completed" | "failed";
+  reference: string | null;
+  /** The last 4 digits of the number looked up. */
+  subject_last4: string;
+  result: R | null;
+  /** Set when status is failed. Failed lookups aren't charged. */
+  error: { type: string; message: string } | null;
+  created_at: string;
+};
+
+export type CoverageIdType = { id_type: string; label: string; name: string; hint: string; live: boolean };
+export type CoverageIdentityCountry = { country: string; name: string; id_types: CoverageIdType[] };
+export type CoverageBusinessCountry = { country: string; name: string; registry: string; number_label: string; hint: string; live: boolean };
+/** Which countries and ID types you can check. live is false until your company is approved for live lookups. */
+export type Coverage = { object: "coverage"; identity: CoverageIdentityCountry[]; business: CoverageBusinessCountry[] };
+
+export type WebhookEventType = "session.completed" | "session.expired" | "lookup.completed" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
 export type WebhookEvent<T = unknown> = { id: string; object: "event"; type: WebhookEventType; environment: "sandbox" | "live"; created_at: string; data: T };
 
 export class MyidiiError extends Error {
-  constructor(message: string, public type: string, public status: number) {
+  constructor(message: string, public type: string, public status: number, public lookup: Lookup | null = null) {
     super(message);
     this.name = "MyidiiError";
   }
@@ -74,8 +150,8 @@ export class Myidii {
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string } };
-    if (!res.ok) throw new MyidiiError(data.error?.message ?? `Request failed with ${res.status}`, data.error?.type ?? "api_error", res.status);
+    const data = (await res.json().catch(() => ({}))) as { error?: { type: string; message: string }; lookup?: Lookup };
+    if (!res.ok) throw new MyidiiError(data.error?.message ?? `Request failed with ${res.status}`, data.error?.type ?? "api_error", res.status, data.lookup ?? null);
     return data as T;
   }
 
@@ -95,6 +171,39 @@ export class Myidii {
       return new Uint8Array(await res.arrayBuffer());
     },
     list: (opts: { limit?: number } = {}) => this.request<{ object: "list"; data: Session[] }>("GET", `/v1/sessions${opts.limit ? `?limit=${opts.limit}` : ""}`),
+  };
+
+  /**
+   * ID number check: look up a government ID number in a supported country. The answer comes back in the response.
+   * Live lookups need your company to be approved under Products in the dashboard, and are charged per answer,
+   * including "not found". Sandbox test numbers for NG: NIN 00000000001 (found), 00000000002 (not found),
+   * 00000000003 (source down); BVN 22222222221, 22222222222, 22222222223.
+   */
+  identity = {
+    lookup: (params: IdentityLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/lookup", params),
+  };
+
+  /** Company registry check. Sandbox (NG): RC0000001, BN0000002, RC0000002 (not found), RC0000003 (source down). */
+  business = {
+    lookup: (params: BusinessLookupParams) => this.request<Lookup<BusinessLookupResult>>("POST", "/v1/business/lookup", params),
+  };
+
+  /** Past ID number and company registry lookups. */
+  lookups = {
+    retrieve: (id: string) => this.request<Lookup>("GET", `/v1/lookups/${encodeURIComponent(id)}`),
+    list: (opts: { limit?: number; type?: LookupType; country?: string } = {}) => {
+      const q = new URLSearchParams();
+      if (opts.limit) q.set("limit", String(opts.limit));
+      if (opts.type) q.set("type", opts.type);
+      if (opts.country) q.set("country", opts.country);
+      const qs = q.toString();
+      return this.request<{ object: "list"; data: Lookup[] }>("GET", `/v1/lookups${qs ? `?${qs}` : ""}`);
+    },
+  };
+
+  /** Supported countries and ID types, and whether each is live for your company. */
+  coverage = {
+    retrieve: () => this.request<Coverage>("GET", "/v1/coverage"),
   };
 
   wallet = {
