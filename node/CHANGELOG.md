@@ -1,5 +1,11 @@
 # @myidii/node
 
+## 0.2.0
+
+### Minor Changes
+
+- [#2](https://github.com/myidii/sdk-server/pull/2) [`f9fbb66`](https://github.com/myidii/sdk-server/commit/f9fbb66beb7365e67234adf928bbe377eac1ae93) Thanks [@Scottlexium](https://github.com/Scottlexium)! - Add ID number and company registry checks: `identity.lookup()` (NIN and BVN in Nigeria for now), `business.lookup()`, `coverage.retrieve()` for the supported countries, and `lookups.retrieve()` / `lookups.list()` with `type` and `country` filters. Lookups carry `country` and `product`. `MyidiiError` now carries the failed `lookup` when a source is down, and `lookup.completed` is a webhook event type.
+
 ## 0.1.1
 
 ### Patch Changes
