@@ -51,11 +51,20 @@ export type IdentityMatch = {
   date_of_birth?: string;
   phone?: string;
 };
-export type NinLookupParams = { nin: string; match?: IdentityMatch; reference?: string };
-export type BvnLookupParams = { bvn: string; match?: IdentityMatch; reference?: string };
+/** ISO 3166-1 alpha-2 country code. Only "NG" for now; coverage.retrieve() lists what's supported. */
+export type Country = "NG";
+export type IdentityIdType = "nin" | "bvn";
+export type IdentityLookupParams = {
+  country: Country;
+  /** For NG: "nin" or "bvn". */
+  id_type: IdentityIdType;
+  /** For NG, NIN and BVN are 11 digits. */
+  id_number: string;
+  match?: IdentityMatch;
+  reference?: string;
+};
 export type BusinessLookupParams = {
-  /** Only "NG" for now. */
-  country: "NG";
+  country: Country;
   /** RC, BN or IT number, for example "RC1234567". */
   registration_number: string;
   /** Directors and shareholders too. */
@@ -82,10 +91,14 @@ export type BusinessLookupResult = {
     people: { name: string; role: string; shares?: number }[] | null;
   } | null;
 };
-export type LookupType = "nin" | "bvn" | "business";
+export type LookupType = IdentityIdType | "business";
+export type LookupProduct = "identity" | "business";
 export type Lookup<R = IdentityLookupResult | BusinessLookupResult> = {
   id: string;
   object: "lookup";
+  /** ISO 3166-1 alpha-2, for example "NG". */
+  country: string;
+  product: LookupProduct;
   type: LookupType;
   environment: "sandbox" | "live";
   status: "completed" | "failed";
@@ -97,6 +110,12 @@ export type Lookup<R = IdentityLookupResult | BusinessLookupResult> = {
   error: { type: string; message: string } | null;
   created_at: string;
 };
+
+export type CoverageIdType = { id_type: string; label: string; name: string; hint: string; live: boolean };
+export type CoverageIdentityCountry = { country: string; name: string; id_types: CoverageIdType[] };
+export type CoverageBusinessCountry = { country: string; name: string; registry: string; number_label: string; hint: string; live: boolean };
+/** Which countries and ID types you can check. live is false until your company is approved for live lookups. */
+export type Coverage = { object: "coverage"; identity: CoverageIdentityCountry[]; business: CoverageBusinessCountry[] };
 
 export type WebhookEventType = "session.completed" | "session.expired" | "lookup.completed" | "wallet.low_balance" | "wallet.topped_up" | "webhook.test";
 export type WebhookEvent<T = unknown> = { id: string; object: "event"; type: WebhookEventType; environment: "sandbox" | "live"; created_at: string; data: T };
@@ -155,31 +174,36 @@ export class Myidii {
   };
 
   /**
-   * NIN and BVN lookups (Nigeria). The answer comes back in the response. Live lookups need your company to be
-   * approved under Products in the dashboard, and are charged per answer, including "not found".
-   * Sandbox test numbers: NIN 00000000001 (found), 00000000002 (not found), 00000000003 (source down);
-   * BVN 22222222221, 22222222222, 22222222223.
+   * ID number check: look up a government ID number in a supported country. The answer comes back in the response.
+   * Live lookups need your company to be approved under Products in the dashboard, and are charged per answer,
+   * including "not found". Sandbox test numbers for NG: NIN 00000000001 (found), 00000000002 (not found),
+   * 00000000003 (source down); BVN 22222222221, 22222222222, 22222222223.
    */
   identity = {
-    nin: (params: NinLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/nin", params),
-    bvn: (params: BvnLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/bvn", params),
+    lookup: (params: IdentityLookupParams) => this.request<Lookup<IdentityLookupResult>>("POST", "/v1/identity/lookup", params),
   };
 
-  /** Business registry lookups (Nigeria's CAC). Sandbox: RC0000001, BN0000002, RC0000002 (not found), RC0000003 (source down). */
+  /** Company registry check. Sandbox (NG): RC0000001, BN0000002, RC0000002 (not found), RC0000003 (source down). */
   business = {
     lookup: (params: BusinessLookupParams) => this.request<Lookup<BusinessLookupResult>>("POST", "/v1/business/lookup", params),
   };
 
-  /** Past NIN, BVN and business lookups. */
+  /** Past ID number and company registry lookups. */
   lookups = {
     retrieve: (id: string) => this.request<Lookup>("GET", `/v1/lookups/${encodeURIComponent(id)}`),
-    list: (opts: { limit?: number; type?: LookupType } = {}) => {
+    list: (opts: { limit?: number; type?: LookupType; country?: string } = {}) => {
       const q = new URLSearchParams();
       if (opts.limit) q.set("limit", String(opts.limit));
       if (opts.type) q.set("type", opts.type);
+      if (opts.country) q.set("country", opts.country);
       const qs = q.toString();
       return this.request<{ object: "list"; data: Lookup[] }>("GET", `/v1/lookups${qs ? `?${qs}` : ""}`);
     },
+  };
+
+  /** Supported countries and ID types, and whether each is live for your company. */
+  coverage = {
+    retrieve: () => this.request<Coverage>("GET", "/v1/coverage"),
   };
 
   wallet = {
