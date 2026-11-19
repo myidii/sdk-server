@@ -1,6 +1,6 @@
 {
   "name": "@myidii/node",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MYIDII server SDK for Node.js: create sessions, read results and verify webhooks",
   "license": "MIT",
   "type": "module",
